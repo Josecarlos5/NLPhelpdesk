@@ -1,6 +1,5 @@
-import unittest
-from unittest.mock import patch, Mock
-from parameterized import parameterized
+import pytest
+from unittest.mock import patch
 
 # Mock database or external service call
 def mock_fetch_user_data(user_id):
@@ -34,27 +33,30 @@ class HelpdeskNLP:
         else:
             return "I'm sorry, I didn't understand your question."
 
-class TestHelpdeskNLP(unittest.TestCase):
+@pytest.fixture
+def helpdesk_nlp():
+    return HelpdeskNLP()
 
-    @patch('__main__.mock_fetch_user_data', side_effect=mock_fetch_user_data)
-    def setUp(self, mock_fetch):
-        self.helpdesk_nlp = HelpdeskNLP()
+@pytest.mark.parametrize("query, user_id, expected_response", [
+    ("How can I reset my password?", "123", 
+     "Hello Alice, to reset your password, click on 'Forgot Password'."),
+    ("What are your hours of operation?", "123", 
+     "We are open from 9 AM to 5 PM, Monday through Friday."),
+    ("What is my account status?", "456", 
+     "Bob, your account status is inactive."),
+    ("Can you help me with something else?", "123", 
+     "I'm sorry, I didn't understand your question."),
+    ("", "789", 
+     "User not found. Please provide a valid user ID.")
+])
+def test_queries(helpdesk_nlp, query, user_id, expected_response):
+    with patch('__main__.mock_fetch_user_data', side_effect=mock_fetch_user_data):
+        response = helpdesk_nlp.process_query(query, user_id)
+    assert response == expected_response
 
-    @parameterized.expand([
-        ("How can I reset my password?", "123", "Hello Alice, to reset your password, click on 'Forgot Password'."),
-        ("What are your hours of operation?", "123", "We are open from 9 AM to 5 PM, Monday through Friday."),
-        ("What is my account status?", "456", "Bob, your account status is inactive."),
-        ("Can you help me with something else?", "123", "I'm sorry, I didn't understand your question."),
-        ("", "789", "User not found. Please provide a valid user ID.")
-    ])
-    def test_queries(self, query, user_id, expected_response):
-        response = self.helpdesk_nlp.process_query(query, user_id)
-        self.assertEqual(response, expected_response)
+def test_state_management(helpdesk_nlp):
+    with patch('__main__.mock_fetch_user_data', side_effect=mock_fetch_user_data):
+        helpdesk_nlp.process_query("How can I reset my password?", "123")
+    assert 'user_name' in helpdesk_nlp.context
+    assert helpdesk_nlp.context['user_name'] == "Alice"
 
-    def test_state_management(self):
-        self.helpdesk_nlp.process_query("How can I reset my password?", "123")
-        self.assertIn('user_name', self.helpdesk_nlp.context)
-        self.assertEqual(self.helpdesk_nlp.context['user_name'], "Alice")
-
-if __name__ == '__main__':
-    unittest.main()
