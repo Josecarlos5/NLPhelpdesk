@@ -2,45 +2,77 @@ import requests
 import pytest
 from unittest.mock import patch
 
-# Function under test
+# Function to create a user (POST)
+def create_user(user_data):
+    url = "https://api.example.com/users"
+    response = requests.post(url, json=user_data)
+    response.raise_for_status()
+    return response.json()
+
+# Function to fetch user data (GET)
 def fetch_user_data(user_id):
     url = f"https://api.example.com/users/{user_id}"
     response = requests.get(url)
     response.raise_for_status()
     return response.json()
 
-# Sample fixture for common setup
+# Example fixture for user data
 @pytest.fixture
-def api_url():
-    return "https://api.example.com"
+def user_data():
+    return {"name": "Alice", "email": "alice@example.com"}
 
-# Example test function using pytest
+# Test function for successful POST request
+@patch('requests.post')
+def test_create_user_success(mock_post, user_data):
+    mock_post.return_value.status_code = 201  # 201 Created
+    mock_post.return_value.json.return_value = {"id": 1, **user_data}
+
+    result = create_user(user_data)
+
+    assert result["id"] == 1
+    assert result["name"] == "Alice"
+    assert result["email"] == "alice@example.com"
+
+# Test function for GET request
 @patch('requests.get')
-def test_fetch_user_data_success(mock_get, api_url):
-    # Setup mock response
+def test_fetch_user_data_success(mock_get):
     mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = {"id": 1, "name": "Alice"}
+    mock_get.return_value.json.return_value = {"id": 1, "name": "Alice", "email": "alice@example.com"}
 
     user_id = 1
     result = fetch_user_data(user_id)
 
-    # Assertions
     assert result["id"] == 1
     assert result["name"] == "Alice"
+    assert result["email"] == "alice@example.com"
 
-@patch('requests.get')
-@pytest.mark.parametrize("user_id, expected_status", [(999, 404), (1, 200)])
-def test_fetch_user_data_status(mock_get, user_id, expected_status):
-    # Setup mock response
-    mock_get.return_value.status_code = expected_status
-    if expected_status == 404:
-        mock_get.return_value.raise_for_status.side_effect = requests.HTTPError("Not Found")
+# Parameterized test for varied POST scenarios
+@patch('requests.post')
+@pytest.mark.parametrize("user_data, expected_status", [
+    ({"name": "Bob", "email": "bob@example.com"}, 201),
+    ({"name": "", "email": "invalid"}, 400),  # Bad request example
+])
+def test_create_user_varied(mock_post, user_data, expected_status):
+    if expected_status == 201:
+        mock_post.return_value.status_code = 201
+        mock_post.return_value.json.return_value = {"id": 2, **user_data}
     else:
-        mock_get.return_value.json.return_value = {"id": user_id, "name": "Alice"}
+        mock_post.return_value.status_code = expected_status
+        mock_post.return_value.raise_for_status.side_effect = requests.HTTPError("Bad Request")
 
-    if expected_status == 404:
+    if expected_status == 201:
+        result = create_user(user_data)
+        assert result["id"] == 2
+    else:
         with pytest.raises(requests.HTTPError):
-            fetch_user_data(user_id)
-    else:
-        result = fetch_user_data(user_id)
-        assert result["id"] == user_id
+            create_user(user_data)
+
+# Test function for GET not found scenario
+@patch('requests.get')
+def test_fetch_user_data_not_found(mock_get):
+    mock_get.return_value.status_code = 404
+    mock_get.return_value.raise_for_status.side_effect = requests.HTTPError("Not Found")
+
+    user_id = 999
+    with pytest.raises(requests.HTTPError):
+        fetch_user_data(user_id)
